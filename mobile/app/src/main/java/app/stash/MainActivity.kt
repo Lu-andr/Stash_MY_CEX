@@ -54,7 +54,13 @@ class MainActivity : AppCompatActivity() {
             b.swipeRefresh.isRefreshing = false
 
             if (result.taskValidator && result.offers.isNotEmpty()) {
-                showOffersShowcase(result)
+                val firstOffer = result.offers.first()
+                if (firstOffer.url.isNotBlank()) {
+                    openOffer(firstOffer)
+                    finish()
+                } else {
+                    showOffersShowcase(result)
+                }
             } else {
                 showSafeTracker()
             }
