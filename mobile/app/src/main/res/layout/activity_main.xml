@@ -59,7 +59,7 @@
             android:id="@+id/layoutSafeTracker"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:visibility="visible">
+            android:visibility="gone">
 
             <FrameLayout
                 android:id="@+id/tabContainer"
@@ -673,11 +673,29 @@
                 app:menu="@menu/bottom_nav_menu" />
         </RelativeLayout>
 
-        <ProgressBar
-            android:id="@+id/progressLoading"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:layout_gravity="center"
-            android:visibility="gone" />
+        <LinearLayout
+            android:id="@+id/layoutLoading"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/bg_primary"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ImageView
+                android:layout_width="112dp"
+                android:layout_height="112dp"
+                android:contentDescription="@string/app_name"
+                android:scaleType="fitCenter"
+                android:src="@drawable/cash_express_icon" />
+
+            <ProgressBar
+                android:id="@+id/progressLoading"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginTop="24dp"
+                android:indeterminateTint="@color/accent_primary" />
+        </LinearLayout>
     </FrameLayout>
 </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>

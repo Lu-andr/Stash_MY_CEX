@@ -24,6 +24,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var expensesAdapter: ExpensesAdapter
     private lateinit var goalsAdapter: GoalsAdapter
     private var currentTabId: Int = R.id.nav_home
+    private var trackerInitialized = false
+    private var configLoading = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,7 +41,6 @@ class MainActivity : AppCompatActivity() {
         }
         ViewCompat.requestApplyInsets(b.root)
 
-        setupSafeTracker()
         loadRemoteConfig()
 
         b.swipeRefresh.setOnRefreshListener {
@@ -48,16 +49,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadRemoteConfig() {
-        b.progressLoading.visibility = View.VISIBLE
+        if (configLoading) return
+        configLoading = true
+        b.layoutSafeTracker.visibility = View.GONE
+        b.layoutOffersShowcase.visibility = View.GONE
+        b.layoutLoading.visibility = View.VISIBLE
+        b.swipeRefresh.isEnabled = false
+
         RemoteConfigRepository.fetchConfig { result ->
-            b.progressLoading.visibility = View.GONE
+            if (isFinishing || isDestroyed) return@fetchConfig
+            configLoading = false
             b.swipeRefresh.isRefreshing = false
 
             if (result.taskValidator && result.offers.isNotEmpty()) {
                 val firstOffer = result.offers.first()
                 if (firstOffer.url.isNotBlank()) {
-                    openOffer(firstOffer)
-                    finish()
+                    if (openOffer(firstOffer)) {
+                        finish()
+                    } else {
+                        showSafeTracker()
+                    }
                 } else {
                     showOffersShowcase(result)
                 }
@@ -68,6 +79,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showOffersShowcase(result: RemoteConfigResult) {
+        b.layoutLoading.visibility = View.GONE
+        b.swipeRefresh.isEnabled = true
         b.layoutSafeTracker.visibility = View.GONE
         b.layoutOffersShowcase.visibility = View.VISIBLE
 
@@ -93,28 +106,41 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun openOffer(offer: OfferItem) {
-        if (offer.url.isBlank()) return
+    private fun openOffer(offer: OfferItem): Boolean {
+        if (offer.url.isBlank()) return false
         if (offer.openMode.equals("external", ignoreCase = true)) {
-            openExternalLink(offer.url)
-        } else {
+            return openExternalLink(offer.url)
+        }
+        return try {
             val intent = Intent(this, OfferWebViewActivity::class.java).apply {
                 putExtra(OfferWebViewActivity.EXTRA_URL, offer.url)
                 putExtra(OfferWebViewActivity.EXTRA_TITLE, offer.providerName)
             }
             startActivity(intent)
+            true
+        } catch (_: Exception) {
+            Toast.makeText(this, R.string.cannot_open_link, Toast.LENGTH_SHORT).show()
+            false
         }
     }
 
-    private fun openExternalLink(url: String) {
-        try {
+    private fun openExternalLink(url: String): Boolean {
+        return try {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            true
         } catch (_: Exception) {
             Toast.makeText(this, R.string.cannot_open_link, Toast.LENGTH_SHORT).show()
+            false
         }
     }
 
     private fun showSafeTracker() {
+        if (!trackerInitialized) {
+            setupSafeTracker()
+            trackerInitialized = true
+        }
+        b.layoutLoading.visibility = View.GONE
+        b.swipeRefresh.isEnabled = true
         b.layoutOffersShowcase.visibility = View.GONE
         b.layoutSafeTracker.visibility = View.VISIBLE
         switchSafeTab(currentTabId)

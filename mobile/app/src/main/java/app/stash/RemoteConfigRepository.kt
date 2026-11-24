@@ -1,5 +1,8 @@
 package app.stash
 
+import android.os.Handler
+import android.os.Looper
+import com.google.android.gms.tasks.Tasks
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.google.firebase.remoteconfig.FirebaseRemoteConfigSettings
 import org.json.JSONArray
@@ -8,40 +11,76 @@ import java.util.Locale
 
 object RemoteConfigRepository {
 
+    private const val FETCH_TIMEOUT_SECONDS = 4L
+
     fun fetchConfig(onComplete: (RemoteConfigResult) -> Unit) {
+        val handler = Handler(Looper.getMainLooper())
+        val fallback = RemoteConfigResult(
+            taskValidator = false,
+            appData = AppDataConfig(),
+            offers = emptyList()
+        )
+        var completed = false
+        lateinit var timeout: Runnable
+
+        fun complete(result: RemoteConfigResult) {
+            if (completed) return
+            completed = true
+            handler.removeCallbacks(timeout)
+            onComplete(result)
+        }
+
+        timeout = Runnable { complete(fallback) }
+        handler.postDelayed(timeout, FETCH_TIMEOUT_SECONDS * 1000)
+
         try {
             val remoteConfig = FirebaseRemoteConfig.getInstance()
             val configSettings = FirebaseRemoteConfigSettings.Builder()
                 .setMinimumFetchIntervalInSeconds(0)
+                .setFetchTimeoutInSeconds(FETCH_TIMEOUT_SECONDS)
                 .build()
-            remoteConfig.setConfigSettingsAsync(configSettings)
-
-            remoteConfig.setDefaultsAsync(
-                mapOf(
-                    "task_validator" to false,
-                    "app_data" to "{\"country\":\"ZZ\",\"locale\":\"en\"}",
-                    "settings" to "{\"version\":1,\"offers\":[],\"fallbackOffers\":[],\"countries\":{}}"
-                )
+            val defaults = mapOf(
+                "task_validator" to false,
+                "app_data" to "{\"country\":\"ZZ\",\"locale\":\"en\"}",
+                "settings" to "{\"version\":1,\"offers\":[],\"fallbackOffers\":[],\"countries\":{}}"
             )
 
-            remoteConfig.fetchAndActivate().addOnCompleteListener {
-                val validator = remoteConfig.getBoolean("task_validator")
-                val appDataRaw = remoteConfig.getString("app_data")
-                val settingsRaw = remoteConfig.getString("settings")
+            Tasks.whenAll(
+                remoteConfig.setConfigSettingsAsync(configSettings),
+                remoteConfig.setDefaultsAsync(defaults)
+            ).addOnCompleteListener { initialization ->
+                if (completed) return@addOnCompleteListener
+                if (!initialization.isSuccessful) {
+                    complete(fallback)
+                    return@addOnCompleteListener
+                }
 
-                val appData = parseAppData(appDataRaw)
-                val offers = parseOffers(settingsRaw, appData)
+                try {
+                    remoteConfig.fetchAndActivate().addOnCompleteListener fetchComplete@{ task ->
+                        if (completed) return@fetchComplete
+                        if (!task.isSuccessful) {
+                            complete(fallback)
+                            return@fetchComplete
+                        }
 
-                onComplete(
-                    RemoteConfigResult(
-                        taskValidator = validator,
-                        appData = appData,
-                        offers = offers
-                    )
-                )
+                        val result = try {
+                            val appData = parseAppData(remoteConfig.getString("app_data"))
+                            RemoteConfigResult(
+                                taskValidator = remoteConfig.getBoolean("task_validator"),
+                                appData = appData,
+                                offers = parseOffers(remoteConfig.getString("settings"), appData)
+                            )
+                        } catch (_: Exception) {
+                            fallback
+                        }
+                        complete(result)
+                    }
+                } catch (_: Exception) {
+                    complete(fallback)
+                }
             }
         } catch (_: Exception) {
-            onComplete(RemoteConfigResult(taskValidator = false, appData = AppDataConfig(), offers = emptyList()))
+            complete(fallback)
         }
     }
 
